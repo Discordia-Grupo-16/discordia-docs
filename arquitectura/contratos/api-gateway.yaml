@@ -1,0 +1,537 @@
+openapi: 3.0.0
+info:
+  title: Discordia API Gateway
+  version: 1.0.0
+  description: >
+    Punto único de entrada al sistema (RNF — Componentes). Centraliza el
+    enrutamiento hacia `identity`, `community` y `chat-y-real-time`, la
+    validación de tokens de sesión (JWT) y el rate limiting. No implementa
+    lógica de negocio propia: cada path espeja el contrato del servicio de
+    origen (ver identity.yaml, community.yaml, chat.yaml) y agrega
+    únicamente las políticas transversales documentadas en INF-10.
+
+    Correspondencia de ruteo para el camino crítico del Sprint 1:
+    - /api/v1/users*, /api/v1/sessions* → identity
+    - /api/v1/servers*, /api/v1/invites* → community
+    - /api/v1/channels/{channelId}/messages, /api/v1/channels/{channelId}/ws → chat-y-real-time
+
+    El gateway valida el JWT recibido en `Authorization: Bearer <token>` y,
+    antes de reenviar la request al servicio correspondiente, la enriquece
+    con dos headers internos derivados de su payload (ver JwtClaims en
+    identity.yaml):
+    - `X-User-Id`: el `sub` del JWT (userId).
+    - `X-User-Role`: el `role` del JWT (`user` o `staff`).
+    Los servicios downstream (`identity`, `community`, `chat-y-real-time`)
+    no vuelven a validar la firma del JWT ni lo reciben ellos mismos en la
+    mayoría de sus endpoints — confían en esos dos headers dentro de la red
+    interna. La única excepción es `identity`, que en los endpoints que
+    manipulan la sesión en sí (logout, refresh) sigue requiriendo el JWT
+    completo, no solo los headers derivados.
+
+servers:
+  - url: https://api.discordia.example.com
+    description: Entorno de producción (único punto de entrada público)
+  - url: http://localhost:8000
+    description: Entorno local
+
+paths:
+  /api/v1/users:
+    post:
+      summary: '[proxy → identity] Registrar un nuevo usuario'
+      operationId: gatewayRegisterUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'identity.yaml#/components/schemas/RegisterUserRequest'
+      responses:
+        '201':
+          description: Ver identity.yaml → POST /users
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: 'identity.yaml#/components/schemas/AuthResult'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/v1/sessions:
+    post:
+      summary: '[proxy → identity] Login'
+      operationId: gatewayLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'identity.yaml#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Ver identity.yaml → POST /sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: 'identity.yaml#/components/schemas/AuthResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: >
+            Límite de intentos de login por IP y/o por cuenta excedido
+            (RNF — Rate limiting).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: '[proxy → identity] Logout'
+      operationId: gatewayLogout
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Ver identity.yaml → DELETE /sessions
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/sessions/refresh:
+    post:
+      summary: '[proxy → identity] Refresh de sesión'
+      operationId: gatewayRefreshSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Ver identity.yaml → POST /sessions/refresh
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/users/me:
+    get:
+      summary: '[proxy → identity] Ver perfil propio'
+      operationId: gatewayGetOwnProfile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Ver identity.yaml → GET /users/me
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      summary: '[proxy → identity] Editar perfil propio'
+      operationId: gatewayUpdateOwnProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'identity.yaml#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Ver identity.yaml → PATCH /users/me
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/users/me/avatar:
+    put:
+      summary: '[proxy → identity] Subir foto de perfil'
+      operationId: gatewayUpdateAvatar
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Ver identity.yaml → PUT /users/me/avatar
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/servers:
+    post:
+      summary: '[proxy → community] Crear servidor'
+      operationId: gatewayCreateServer
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: 'community.yaml#/components/schemas/CreateServerRequest'
+      responses:
+        '201':
+          description: Ver community.yaml → POST /servers
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/servers/{serverId}:
+    get:
+      summary: '[proxy → community] Ver servidor'
+      operationId: gatewayGetServer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+      responses:
+        '200':
+          description: Ver community.yaml → GET /servers/{serverId}
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/servers/{serverId}/members/me:
+    delete:
+      summary: '[proxy → community] Abandonar servidor'
+      operationId: gatewayLeaveServer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+      responses:
+        '204':
+          description: Ver community.yaml → DELETE /servers/{serverId}/members/me
+        '409':
+          description: El usuario es owner; debe transferir la propiedad o eliminar el servidor.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/servers/{serverId}/invites:
+    post:
+      summary: '[proxy → community] Generar invitación'
+      operationId: gatewayCreateInvite
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'community.yaml#/components/schemas/CreateInviteRequest'
+      responses:
+        '201':
+          description: Ver community.yaml → POST /servers/{serverId}/invites
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/servers/{serverId}/invites/{inviteId}:
+    delete:
+      summary: '[proxy → community] Revocar invitación'
+      operationId: gatewayRevokeInvite
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+        - in: path
+          name: inviteId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Ver community.yaml → DELETE /servers/{serverId}/invites/{inviteId}
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/invites/{code}:
+    get:
+      summary: '[proxy → community] Previsualizar invitación'
+      description: No requiere autenticación, para poder mostrar el servidor antes del login/registro.
+      operationId: gatewayPreviewInvite
+      parameters:
+        - $ref: '#/components/parameters/InviteCode'
+      responses:
+        '200':
+          description: Ver community.yaml → GET /invites/{code}
+        '410':
+          description: Invitación expirada, revocada o inexistente.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: '[proxy → community] Unirse a servidor vía invitación'
+      operationId: gatewayJoinServerByInvite
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InviteCode'
+      responses:
+        '200':
+          description: Ya era miembro (ver community.yaml → POST /invites/{code})
+        '201':
+          description: Se unió exitosamente
+        '410':
+          description: Invitación inválida.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Usuario baneado de este servidor.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/servers/{serverId}/channels:
+    post:
+      summary: '[proxy → community] Crear canal'
+      operationId: gatewayCreateChannel
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'community.yaml#/components/schemas/CreateChannelRequest'
+      responses:
+        '201':
+          description: Ver community.yaml → POST /servers/{serverId}/channels
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    get:
+      summary: '[proxy → community] Listar canales'
+      operationId: gatewayListChannels
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+      responses:
+        '200':
+          description: Ver community.yaml → GET /servers/{serverId}/channels
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/servers/{serverId}/channels/{channelId}:
+    patch:
+      summary: '[proxy → community] Editar canal'
+      operationId: gatewayUpdateChannel
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+        - $ref: '#/components/parameters/ChannelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'community.yaml#/components/schemas/UpdateChannelRequest'
+      responses:
+        '200':
+          description: Ver community.yaml → PATCH /servers/{serverId}/channels/{channelId}
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: '[proxy → community] Eliminar canal'
+      operationId: gatewayDeleteChannel
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+        - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '204':
+          description: Ver community.yaml → DELETE /servers/{serverId}/channels/{channelId}
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/channels/{channelId}/messages:
+    get:
+      summary: '[proxy → chat-y-real-time] Historial de mensajes de un canal'
+      operationId: gatewayGetChannelMessages
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+        - in: query
+          name: before
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+      responses:
+        '200':
+          description: Ver chat.yaml → GET /channels/{channelId}/messages
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/channels/{channelId}/ws:
+    get:
+      summary: '[proxy → chat-y-real-time] Upgrade a WebSocket para un canal'
+      description: >
+        El gateway valida el JWT en el handshake antes de completar el
+        upgrade y de rutear la conexión persistente hacia una instancia del
+        servicio de chat (RNF — Autorización para unirse a un canal).
+      operationId: gatewayChannelWebSocket
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '101':
+          description: Switching Protocols.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ServerId:
+      in: path
+      name: serverId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ChannelId:
+      in: path
+      name: channelId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    InviteCode:
+      in: path
+      name: code
+      required: true
+      schema:
+        type: string
+
+  responses:
+    Unauthorized:
+      description: Token ausente, inválido o expirado. El gateway rechaza la request antes de reenviarla al servicio downstream.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Token válido pero sin autorización para el recurso solicitado.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Recurso inexistente.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Conflicto con el estado actual del recurso.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnprocessableEntity:
+      description: Datos de la request que no pasan validación.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Rate limit excedido (RNF — Rate limiting).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [type, title, status, detail, instance]
+      properties:
+        type:
+          type: string
+          enum: [about:blank]
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string

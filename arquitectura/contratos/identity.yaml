@@ -1,0 +1,461 @@
+openapi: 3.0.0
+info:
+  title: Discordia Identity Service API
+  version: 1.0.0
+  description: >
+    Servicio `identity`. Cubre las épicas Usuarios y Perfil para el camino
+    crítico del Sprint 1 (CP1): Registro de usuarios (#1), Login con email y
+    contraseña (#2), Edición de perfil (#4) y Visualización de perfil propio (#5).
+    Fuera de alcance en este sprint: recupero de contraseña, login federado,
+    PIN, 2FA y perfil público — se agregan en un sprint posterior sin romper
+    este contrato.
+
+servers:
+  - url: http://localhost:8001
+    description: Entorno local (detrás del API Gateway en producción)
+
+paths:
+  /users:
+    post:
+      summary: Registrar un nuevo usuario
+      description: >
+        CA1 (éxito), CA2 (email duplicado), CA3 (formato de email inválido),
+        CA4 (contraseña insegura) de la historia "Registro de usuarios".
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterUserRequest'
+      responses:
+        '201':
+          description: Usuario creado exitosamente. Devuelve el usuario y una sesión activa.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AuthResult'
+        '409':
+          description: El correo electrónico ya está en uso (CA2).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Email con formato inválido o contraseña que no cumple los requisitos mínimos (CA3, CA4).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sessions:
+    post:
+      summary: Iniciar sesión con email y contraseña
+      description: >
+        CA1 (éxito), CA2 (contraseña incorrecta) y CA3 (email no registrado)
+        de la historia "Login con email y contraseña". CA2 y CA3 devuelven la
+        misma respuesta genérica para no revelar cuál campo es incorrecto.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login exitoso. Devuelve access y refresh token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AuthResult'
+        '401':
+          description: >
+            Credenciales inválidas (email no registrado o contraseña
+            incorrecta). El mensaje es idéntico en ambos casos (CA2, CA3).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Cerrar sesión
+      description: >
+        CA5 de "Login con email y contraseña": invalida la sesión actual.
+        El token usado en esta llamada no debe poder reutilizarse después.
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Sesión invalidada exitosamente.
+        '401':
+          description: No hay sesión activa o el token ya es inválido.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sessions/refresh:
+    post:
+      summary: Renovar el access token sin re-autenticación
+      description: >
+        CA4 de "Login con email y contraseña": permite conservar la acción
+        pendiente cuando el access token expiró pero la sesión (refresh
+        token) sigue siendo válida.
+      operationId: refreshSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Nuevo access token emitido.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AuthResult'
+        '401':
+          description: Refresh token inválido, expirado o revocado (sesión expirada, redirige a login).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/me:
+    get:
+      summary: Ver el perfil propio
+      description: >
+        CA1 de "Visualización de perfil propio": nombre, foto, descripción y
+        fecha de registro. (Estado de actividad queda fuera de este sprint.)
+      operationId: getOwnProfile
+      parameters:
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+      responses:
+        '200':
+          description: Perfil del usuario autenticado.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+
+    patch:
+      summary: Editar el perfil propio
+      description: >
+        CA1 (edición exitosa), CA2 (foto de perfil actualizada) y CA3 (datos
+        inválidos) de la historia "Edición de perfil". La imagen se sube
+        aparte vía /users/me/avatar; este endpoint acepta la URL ya persistida
+        en almacenamiento externo de objetos.
+      operationId: updateOwnProfile
+      parameters:
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Perfil actualizado. Los cambios se reflejan de inmediato (CA1, CA2).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '422':
+          description: Datos que no cumplen las validaciones del sistema (CA3). No se persisten cambios.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/me/avatar:
+    put:
+      summary: Subir o reemplazar la foto de perfil
+      description: >
+        CA2 de "Edición de perfil". El archivo se almacena en un servicio
+        externo de objetos (S3/GCS/Cloudinary); solo se persiste la URL
+        resultante en `avatarUrl`. Formatos aceptados JPEG/PNG/WebP, hasta 5MB
+        (Requisitos No Funcionales — Gestión de imágenes y media).
+      operationId: updateAvatar
+      parameters:
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Imagen subida y perfil actualizado con la nueva URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '422':
+          description: Formato o tamaño de archivo no soportado.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/{userId}:
+    get:
+      summary: Ver datos básicos de un usuario por id (uso interno / entre servicios)
+      description: >
+        No corresponde a una historia de usuario final de este sprint (el
+        perfil público es optativo y no está en el CP1). Se expone para que
+        `community` y `chat` puedan resolver nombre y avatar al mostrar
+        miembros, autores de mensajes, etc. Devuelve únicamente campos
+        públicos — nunca email ni contraseña (RNF — Minimización de datos en APIs).
+      operationId: getUserPublicById
+      parameters:
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Datos públicos del usuario.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PublicUser'
+        '404':
+          description: Usuario inexistente.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Usado únicamente por endpoints que necesitan el JWT/refresh token en
+        sí (ej. logout, para invalidar la sesión concreta), no solo saber
+        quién es el usuario. El resto de los endpoints autenticados de este
+        servicio usa X-User-Id/X-User-Role, propagados por el API Gateway.
+
+  parameters:
+    XUserId:
+      in: header
+      name: X-User-Id
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: >
+        Id del usuario autenticado, propagado por el API Gateway a partir
+        del JWT ya validado (ver JwtClaims). Este servicio no vuelve a
+        validar el JWT en estos endpoints; confía en este header dentro de
+        la red interna.
+    XUserRole:
+      in: header
+      name: X-User-Role
+      required: true
+      schema:
+        type: string
+        enum: [user, staff]
+      description: Rol global del usuario autenticado, propagado por el API Gateway.
+
+  schemas:
+    User:
+      type: object
+      description: Representación completa del perfil propio (nunca se devuelve para otros usuarios).
+      required: [id, email, name, role, avatarUrl, bio, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        role:
+          type: string
+          enum: [user, staff]
+          description: >
+            Rol global de plataforma (RNF — "Rol de staff de la plataforma"),
+            independiente de los roles por servidor de la épica Roles y
+            Permisos. No es autoasignable: se otorga por fuera de la
+            interfaz normal (seed script, variable de entorno, etc.). Se
+            incluye en el JWT emitido (RNF — Lineamientos técnicos de
+            autenticación) para que el gateway y los servicios puedan
+            autorizar endpoints de backoffice sin una llamada adicional.
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+        bio:
+          type: string
+          maxLength: 300
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    PublicUser:
+      type: object
+      description: Subconjunto público de User, sin email ni datos sensibles.
+      required: [id, name, avatarUrl]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+
+    AuthResult:
+      type: object
+      required: [user, accessToken, refreshToken, expiresIn]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        accessToken:
+          type: string
+          description: >
+            JWT de sesión, firmado por `identity`. Viaja como string opaco en
+            este response; ver JwtClaims para la estructura de su payload
+            decodificado (RNF — Lineamientos técnicos de autenticación).
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          description: Segundos hasta la expiración del accessToken.
+
+    JwtClaims:
+      type: object
+      description: >
+        Estructura del payload del `accessToken` una vez decodificado. No es
+        un body HTTP en sí mismo — documenta el contrato interno que el
+        gateway y los demás servicios (`community`, `chat`) deben poder
+        interpretar para autorizar requests, en particular para distinguir
+        endpoints de backoffice reservados a `role: staff`.
+      required: [sub, role, iat, exp]
+      properties:
+        sub:
+          type: string
+          format: uuid
+          description: userId del usuario autenticado (User.id).
+        role:
+          type: string
+          enum: [user, staff]
+          description: Copia de User.role al momento de emitir el token.
+        iat:
+          type: integer
+          description: Unix timestamp de emisión.
+        exp:
+          type: integer
+          description: Unix timestamp de expiración.
+
+    RegisterUserRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          description: Mínimo 8 caracteres, al menos una mayúscula, una minúscula y un número.
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    UpdateProfileRequest:
+      type: object
+      description: Todos los campos son opcionales; se actualizan solo los presentes.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        bio:
+          type: string
+          maxLength: 300
+
+    ErrorResponse:
+      type: object
+      required: [type, title, status, detail, instance]
+      properties:
+        type:
+          type: string
+          enum: [about:blank]
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
