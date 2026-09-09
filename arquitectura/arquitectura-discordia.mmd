@@ -1,0 +1,52 @@
+%% Discordia - Arquitectura de alto nivel
+%% Fuente unica del diagrama. Editar aca, no en una imagen exportada.
+%% Ver: adr/0001, adr/0002, adr/0003, adr/0004
+
+flowchart TB
+    subgraph clientes["Artefactos cliente"]
+        web["web-app<br/>React"]
+        bo["backoffice<br/>React"]
+        mob["mobile<br/>React Native"]
+    end
+
+    gw["api-gateway<br/>Go<br/>auth JWT / rate limit / ruteo"]
+
+    bus{{"Bus Pub/Sub<br/>tecnologia sin definir - ADR-0003"}}
+
+    subgraph python["Python + FastAPI + PostgreSQL"]
+        identity["identity<br/>usuarios / auth / perfil"]
+        community["community<br/>servidores / canales / invitaciones"]
+        mod["mod<br/>moderacion / roles / baneos"]
+        monetization["monetization<br/>suscripciones / pagos"]
+    end
+
+    subgraph golang["Go"]
+        chat["chat-and-real-time<br/>MongoDB<br/>mensajeria + voz"]
+        notif["notifications<br/>sin DB propia"]
+        metrics["metrics<br/>PostgreSQL"]
+    end
+
+    fcm[("Firebase<br/>Cloud Messaging")]
+
+    web --> gw
+    bo --> gw
+    mob --> gw
+
+    gw <--> bus
+
+    bus <--> identity
+    bus <--> community
+    bus <--> mod
+    bus <--> monetization
+    bus <--> chat
+    bus --> notif
+    bus --> metrics
+
+    notif --> fcm
+
+    identity <-. "sincronico<br/>ADR-0004" .-> community
+    identity <-. "sincronico<br/>ADR-0004" .-> mod
+    monetization -. "sincronico<br/>ADR-0004" .-> identity
+
+    classDef pendiente stroke-dasharray: 5 5
+    class bus pendiente

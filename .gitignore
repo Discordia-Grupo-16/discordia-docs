@@ -1,0 +1,21 @@
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporales de Office / editores
+~$*
+*.tmp
+*.swp
+.obsidian/
+.vscode/
+.idea/
+
+# Salidas generadas (los PDF se generan a demanda, no se versionan salvo la entrega final)
+entregas/**/*.pdf
+!entregas/**/entrega-*.pdf
+
+# Nunca
+.env
+*.pem
+*.key
