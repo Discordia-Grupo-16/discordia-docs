@@ -1,117 +1,91 @@
-# ADR-0003 — Tecnología de Pub/Sub
+# ADR-0003: Tecnología de Pub/Sub
 
 - **Estado:** Propuesto
 - **Fecha:** 2026-09-09
 - **Decisores:** Grupo 16
-- **Tarea relacionada:** INF-03 (Sprint 1 — CP1)
-- **Bloquea a:** INF-05 (docker-compose), INF-06 (cliente compartido de Pub/Sub), INF-10 (API Gateway), historia #15 (Enviar mensaje en un canal)
-
----
+- **Servicios afectados:** `identity`, `community`, `mod`, `notifications`, `chat-and-real-time`, `metrics`, `monetization`, `api-gateway`
 
 ## Contexto
 
-El enunciado impone tres requisitos que condicionan esta decisión:
+El enunciado exige que la comunicación entre servicios backend sea asíncrona por defecto y que la propagación de mensajes entre instancias del servicio de mensajería se resuelva mediante un mecanismo de pub/sub, de forma que el sistema funcione con varias instancias corriendo en paralelo. Además pide consumidores idempotentes, tolerancia a mensajes duplicados o fuera de orden, y distinguir fallos transitorios (reintentar) de permanentes (compensar o notificar).
 
-1. **Comunicación asíncrona por defecto entre servicios backend.** Toda llamada sincrónica entre dos servicios debe justificarse en un ADR aparte. Los consumidores de eventos deben ser idempotentes y el sistema debe tolerar mensajes duplicados o fuera de orden.
-2. **Propagación de mensajes entre instancias del servicio de mensajería mediante pub/sub**, de forma que el sistema funcione correctamente con múltiples instancias corriendo en paralelo.
-3. **Manejo de errores distribuidos**: diferenciar fallos transitorios (reintentar) de permanentes (compensar o notificar), sin silenciar errores.
-
-A esto se suman restricciones propias del proyecto:
-
-- Dos lenguajes de backend en uso (**Python + FastAPI** y **Go**), por lo que se necesita un cliente maduro en ambos.
-- El entorno local debe levantarse completo con `docker-compose`.
-- El despliegue debe usar un plan gratuito o de bajo costo.
-- El equipo tiene ~13 semanas y ninguna experiencia previa operando un broker en producción.
-
-### Dos casos de uso, no uno
-
-El sistema necesita el broker para dos cosas con semántica opuesta, y esto es central para la decisión:
+El sistema necesita el broker para dos cosas con semántica opuesta:
 
 | | Caso A — Eventos de dominio | Caso B — Fan-out de mensajería |
 | --- | --- | --- |
-| Ejemplo | `user.banned`, `server.created`, `payment.confirmed` | Un mensaje enviado en un canal debe llegar a todos los WebSockets conectados |
-| Emisor | Cualquier servicio | Una instancia de `chat-and-real-time` |
-| Consumidores | Un servicio (aunque tenga N réplicas, procesa **una** sola) | **Todas** las instancias de `chat-and-real-time` |
-| Pérdida aceptable | No. Debe persistir y reintentarse | Tolerable: si no hay nadie conectado, el mensaje ya está en MongoDB y se recupera por historial |
+| Ejemplo | `member.banned`, `server.created`, `payment.confirmed` | Un mensaje de canal debe llegar a todos los WebSockets conectados |
+| Consumidores | Un servicio: aunque tenga N réplicas, procesa **una** sola | **Todas** las instancias de `chat-and-real-time` |
+| Pérdida aceptable | No: debe persistir y reintentarse | Sí: el mensaje ya está en MongoDB y se recupera por historial |
 | Latencia | Segundos | Milisegundos |
 
-Una solución que resuelve bien A puede resolver mal B, y viceversa. La decisión debe cubrir ambos.
+Una tecnología puede resolver bien uno y mal el otro, así que la decisión tiene que cubrir ambos.
 
----
+Restricciones que acotan las opciones:
+
+- Dos lenguajes de backend (Python + FastAPI y Go): hace falta cliente maduro en los dos.
+- El entorno local completo tiene que levantar con `docker-compose`.
+- El despliegue debe usar un plan gratuito o de bajo costo.
+- Ningún integrante operó un broker en producción antes, y la ventana del CP1 son 18 días.
+
+## Opciones consideradas
+
+### Opción A — Redis Pub/Sub
+
+- **A favor:** la más simple de todas; latencia mínima; resuelve el Caso B casi sin código; es probable que Redis termine en el stack por otras razones igual.
+- **En contra:** es *fire-and-forget*. No hay persistencia, ni `ack`, ni reintentos: un consumidor caído cinco segundos pierde definitivamente lo publicado en esa ventana. Inaceptable para el Caso A, donde la consigna exige consistencia ante fallos parciales y compensación de pagos. Redis Streams sí persiste, pero obliga a implementar a mano consumer groups, reintentos y DLQ.
+
+### Opción B — Apache Kafka
+
+- **A favor:** log persistente con replay desde cualquier offset; orden garantizado por partición; el mayor throughput de las cuatro opciones; es el estándar de la industria para arquitecturas event-driven.
+- **En contra:** costo operativo desproporcionado para el proyecto. Hay que gestionar el cluster o pagar un servicio sin free tier razonable, y el modelo de offsets, consumer groups y rebalanceos es una curva de aprendizaje que compite con la épica de Voz, que ya es el riesgo #1 del cuatrimestre. El Caso B es además un antipatrón: crear un consumer group efímero por instancia de WebSocket es caro.
+
+### Opción C — NATS / JetStream
+
+- **A favor:** probablemente el mejor ajuste técnico puro. Un solo binario liviano, latencia muy baja, core NATS resuelve el Caso B de forma nativa y JetStream cubre el Caso A con persistencia.
+- **En contra:** nadie del equipo lo usó, la cátedra tiene menos expertise para acompañar y el ecosistema de documentación y respuestas es más chico. En 18 días, cada hora de debugging a ciegas pesa.
+
+### Opción D — RabbitMQ
+
+- **A favor:** cubre los dos casos de uso con una sola pieza de infraestructura, cambiando solo la topología de colas. Trae de fábrica `ack` manual, colas durables, DLQ, TTL para backoff y routing por topic. Clientes maduros en ambos lenguajes (`aio-pika` en Python, `amqp091-go` en Go). Se levanta con una entrada de `docker-compose` y su management UI facilita depurar y mostrar el flujo en la demo. Hay free tier gestionado (CloudAMQP) para la nube. Recomendado por la cátedra, con acompañamiento docente disponible.
+- **En contra:** no permite replay de eventos ya consumidos; menor throughput que Kafka; suma una dependencia de infraestructura que hay que operar y monitorear.
 
 ## Decisión
 
-**Se adopta RabbitMQ como único broker de mensajería del sistema**, usado con dos patrones de topología distintos según el caso de uso.
+Elegimos **RabbitMQ**.
 
-### Topología para el Caso A — Eventos de dominio
+El criterio que desempató no fue el rendimiento sino **cubrir los dos casos de uso con una sola pieza de infraestructura, usando primitivas que ya vienen resueltas**. Redis quedó afuera porque obliga a elegir entre perder eventos o construir a mano la durabilidad; Kafka y NATS quedaron afuera porque su costo de aprendizaje y operación se paga en las mismas semanas en que hay que resolver la voz. El throughput extra de Kafka no lo necesitamos: la escala del TP no lo justifica.
 
-- Un **topic exchange** durable: `discordia.events`.
-- Routing keys jerárquicas: `<dominio>.<entidad>.<acción>` (ej. `mod.member.banned`, `community.server.created`).
-- **Una cola durable por servicio consumidor** (ej. `notifications.mod-events`), compartida por todas sus réplicas. RabbitMQ reparte round-robin: cada evento lo procesa exactamente una réplica.
-- `ack` manual después de procesar, `nack` sin requeue hacia una **Dead Letter Queue** tras N reintentos.
-- Reintentos con backoff exponencial vía TTL + DLX.
-- Todo evento lleva `message_id` (UUID v4), `occurred_at` y `version` en el envelope (ver INF-02). Los consumidores persisten los `message_id` procesados para ser idempotentes.
+La decisión se implementa con dos topologías distintas sobre el mismo broker:
 
-### Topología para el Caso B — Fan-out de mensajería en tiempo real
+**Caso A — eventos de dominio.** Topic exchange durable `discordia.events`, routing keys `<dominio>.<entidad>.<acción>` (ej. `mod.member.banned`). Una cola durable por servicio consumidor, compartida por sus réplicas: RabbitMQ reparte round-robin y cada evento lo procesa una sola. `ack` manual tras procesar, reintentos con backoff exponencial vía TTL + DLX, y DLQ después de N intentos.
 
-- Un **topic exchange** separado: `discordia.realtime`.
-- **Una cola exclusiva y `auto-delete` por instancia** de `chat-and-real-time`, con nombre generado por el broker, bindeada al exchange.
-- Sin durabilidad: si la instancia muere, su cola desaparece; los clientes se reconectan a otra instancia y recuperan lo perdido por el historial (historia #16).
+**Caso B — fan-out de mensajería.** Topic exchange separado `discordia.realtime`, con una cola **exclusiva y auto-delete por instancia** de `chat-and-real-time`, con nombre generado por el broker. Sin durabilidad: si la instancia muere, su cola desaparece y los clientes recuperan lo perdido por el historial.
 
-> **Trampa a evitar:** si el Caso B usara una cola compartida como el Caso A, RabbitMQ haría round-robin y el mensaje llegaría a **una sola instancia**. Los clientes conectados a las otras no verían nada. Ese es exactamente el escenario que la demo del CP1 debe probar, así que la separación de topologías es obligatoria, no un detalle de tuning.
-
----
-
-## Alternativas evaluadas
-
-### Redis Pub/Sub — descartada
-
-Es la opción más simple y la de menor latencia, y resolvería el Caso B casi sin código.
-
-Se descarta porque es *fire-and-forget*: no hay persistencia, ni `ack`, ni reintentos. Un consumidor caído durante 5 segundos pierde definitivamente todo lo publicado en esa ventana. Eso es inaceptable para el Caso A, donde el enunciado exige consistencia ante fallos parciales y compensación de flujos de pago. Se evaluó **Redis Streams** como variante con persistencia, pero obliga a implementar a mano consumer groups, reintentos y DLQ — trabajo que RabbitMQ ya trae resuelto.
-
-### Apache Kafka — descartada
-
-Técnicamente superior para el Caso A: log persistente, replay desde cualquier offset, particionado con orden garantizado por partición, throughput muy alto.
-
-Se descarta por costo operativo desproporcionado al proyecto. Requiere gestionar el cluster (o pagar un servicio gestionado sin free tier razonable), y el modelo de offsets, consumer groups y rebalanceos es una curva de aprendizaje que competiría con las 16 pts de la épica de Voz, que ya es el riesgo #1 del cuatrimestre. Además, el Caso B es un antipatrón en Kafka: crear un topic o consumer group efímero por instancia de WebSocket es caro.
-
-### NATS / NATS JetStream — descartada
-
-Es probablemente el mejor ajuste técnico puro: un binario liviano, latencia muy baja, y core NATS resuelve el Caso B de forma nativa mientras JetStream cubre el Caso A con persistencia.
-
-Se descarta por razones de equipo, no técnicas: nadie del grupo lo usó, la cátedra tiene menos expertise para acompañar, y el ecosistema de tutoriales y respuestas es más chico que el de RabbitMQ. Con 18 días de sprint, la familiaridad pesa más que el rendimiento marginal.
-
-### RabbitMQ — elegida
-
-- Cubre **ambos** casos de uso con una sola pieza de infraestructura, cambiando solo la topología de colas.
-- Trae de fábrica lo que el enunciado pide: `ack` manual, colas durables, DLQ, TTL para backoff, routing por topic.
-- Clientes maduros en los dos lenguajes: `aio-pika` (Python) y `amqp091-go` (Go).
-- Se levanta en local con una sola entrada en `docker-compose`, con management UI en el 15672 — muy útil para depurar durante la demo.
-- Existe free tier gestionado (CloudAMQP) para el entorno de nube, evitando operar el broker nosotros.
-- Recomendado por la cátedra, lo que asegura acompañamiento docente durante las weeklies.
-
----
+> La separación es obligatoria, no un detalle de tuning. Si el Caso B usara una cola compartida como el A, el round-robin haría que cada mensaje llegue a una sola instancia y los clientes conectados a las demás no verían nada — exactamente el escenario que la demo del CP1 tiene que probar.
 
 ## Consecuencias
 
-### Positivas
+**Positivas**
 
-- Una sola dependencia de infraestructura para toda la comunicación asíncrona.
-- El cliente compartido de INF-06 puede exponer una API única (`publish` / `subscribe`) con un flag que seleccione la topología A o B, ocultando la diferencia al resto del equipo.
-- La management UI permite demostrar visualmente el flujo de eventos al corrector.
+- Una sola dependencia de infraestructura para toda la comunicación asíncrona, en local y en la nube.
+- El cliente compartido (INF-06) puede exponer una API única de `publish` / `subscribe` con un modo que selecciona la topología, ocultando la diferencia al resto del equipo.
+- La management UI permite mostrarle el flujo de eventos al corrector durante la demo.
 
-### Negativas y riesgos asumidos
+**Negativas / costo que aceptamos**
 
-- **No hay replay histórico.** A diferencia de Kafka, un evento consumido y ackeado no se puede volver a leer. Si `metrics` (épica optativa) necesitara reconstruir su estado, debería hacerlo desde cero. Mitigación: `metrics` persiste rollups incrementales en PostgreSQL desde el día uno, en vez de depender de reprocesar el log.
-- **El orden no está garantizado end-to-end.** RabbitMQ preserva el orden dentro de una cola con un solo consumidor, pero con prefetch o múltiples réplicas se pierde. Por eso el envelope de INF-02 incluye `occurred_at` y los consumidores deben ser idempotentes y tolerantes al desorden.
-- **El broker es un punto único de falla.** Si RabbitMQ cae, la mensajería en tiempo real deja de propagarse entre instancias. Mitigación para CP1: el cliente de INF-06 implementa reconexión con backoff, y los mensajes se persisten en MongoDB *antes* de publicarse, para que el historial nunca dependa del broker.
-- Queda pendiente decidir la política de `prefetch` por consumidor y el número máximo de reintentos antes de DLQ. Se define al implementar INF-06 y se documenta en su README.
+- **Sin replay histórico.** Un evento consumido y ackeado no se puede volver a leer. Si `metrics` necesitara reconstruir su estado, no podría hacerlo desde el bus: tiene que persistir rollups incrementales desde el día uno.
+- **El orden no está garantizado end-to-end.** RabbitMQ lo preserva dentro de una cola con un consumidor, pero con prefetch o múltiples réplicas se pierde. Obliga a que todos los consumidores sean idempotentes y toleren desorden, usando `occurred_at` del envelope.
+- **El broker es un punto único de falla.** Si RabbitMQ cae, la mensajería deja de propagarse entre instancias. Mitigación: reconexión con backoff en el cliente, y persistir el mensaje en MongoDB *antes* de publicarlo, para que el historial nunca dependa del broker.
+- Un servicio más para monitorear, incluyendo la profundidad de las DLQ.
 
----
+**Qué queda pendiente por esta decisión**
+
+- Definir la política de `prefetch` por consumidor y el máximo de reintentos antes de DLQ. Se cierra al implementar INF-06 y se documenta en su README.
+- Confirmar el proveedor gestionado para la nube y su free tier, junto con INF-16.
+- Definir cómo se monitorean las DLQ: quién mira, con qué frecuencia y qué se hace con un mensaje muerto.
 
 ## Referencias
 
-- Enunciado 2026C2 — Discordia, sección *Requisitos No Funcionales → Mensajería en tiempo real y Voz*, e *Integridad y Flujo de Datos*.
+- Enunciado 2026C2 — Discordia, *Requisitos No Funcionales*: "Mensajería en tiempo real y Voz" e "Integridad y Flujo de Datos".
 - ADR-0002 — Corte de microservicios por dominio de negocio.
 - INF-02 — Contrato de eventos del bus (envelope, naming, versionado, idempotencia).
