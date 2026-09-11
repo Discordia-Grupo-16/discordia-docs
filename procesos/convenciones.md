@@ -4,7 +4,7 @@
 
 ## Repos
 
-`discordia-<servicio>` — `discordia-identity`, `discordia-community`, `discordia-chat`, `discordia-api-gateway`, `discordia-web`, `discordia-mobile`, `discordia-docs`.
+Ver [`git-workflow.md`](git-workflow.md#repos).
 
 ## Servicios
 
@@ -42,5 +42,10 @@ UTC en ISO-8601 con `Z` (`2026-09-08T14:32:00Z`), tanto en la API como en los ev
 
 ## Idioma
 
-- Código, nombres de variables, eventos, endpoints, ramas y commits: **inglés**.
-- Documentación, ADR e informes: **español**.
+- Código, nombres de variables, eventos y endpoints: inglés. 
+- Ramas y commits: español (ver git-workflow.md). 
+- Documentación, ADR e informes: español.
+
+## Ramas, commits y PRs
+
+Ver [`git-workflow.md`](git-workflow.md).

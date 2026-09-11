@@ -1,45 +1,168 @@
 # Flujo de trabajo con Git
 
-Aplica a los 8 repos de servicio, los 3 de front y a este repo de documentación.
+**Estado: acordado.** Aplica a todos los repos de la organización.
+
+Es la versión canónica para nombres de repo, ramas, commits, PRs y manejo de secretos.
+Si otro documento dice algo distinto sobre estos temas, manda este.
+
+---
 
 ## Repos
 
-**Un repo por microservicio** (más los de front y este). No hay monorepo.
+**Un repo por microservicio**, más los tres de front, el de documentación y el de CI. No
+hay monorepo.
+
+Nombres en minúscula, guion medio, **sin prefijo** `discordia-`: la organización ya se
+llama `Discordia-Grupo-16` y repetirlo en cada repo es redundante.
+
+| Repo | Estado |
+| --- | --- |
+| `community` | ok |
+| `api-gateway` | ok |
+| `web-app` | ok |
+| `identity` | ok |
+| `chat-and-real-time` | ok |
+| `docs` | ok |
+| `demo-repository` | **borrar**: es el repo de ejemplo que crea GitHub al armar la org |
+| `discordia-ci` | no es un servicio, es la infraestructura de CI |
+
+Pendientes de crear, con estos nombres: `mod`, `monetization`, `notifications`,
+`metrics`, `backoffice`, `mobile`.
+
+
 
 ## Ramas
 
 | Rama | Para qué |
-|---|---|
-| `master` | Lo que está desplegado / lo que se entrega en cada checkpoint |
-| `dev` | Integración. De acá salen y acá vuelven todas las features |
-| `feature/<TP-XXX>-<slug>` | Una rama por historia o task de Jira |
+| --- | --- |
+| `main` | Lo que está desplegado / lo que se entrega en cada checkpoint |
+| `develop` | Integración. De acá salen y acá vuelven todas las features |
+| `<tipo>/SCRUM-XXX-<slug>` | Una rama por historia o task de Jira |
 
-- **Sin commits directos a `dev` ni a `master`.**
-- `dev` → `master` solo en los checkpoints.
+- **Sin commits directos a `develop` ni a `main`.** Las dos están protegidas.
+- `develop` → `main` solo en los checkpoints.
+- Las ramas de trabajo salen siempre de `develop` y se borran después del merge.
+
+Tipos: `feat/` funcionalidad nueva · `fix/` corrección · `chore/` infraestructura, build,
+dependencias · `docs/` documentación · `refactor/` cambio interno sin cambio de
+comportamiento.
+
+```
+chore/SCRUM-101-pipeline-ci
+feat/SCRUM-30-generar-invitacion
+fix/SCRUM-112-permissions-nullable
+```
+
+El número de Jira en el nombre hace que GitHub lo ponga solo en el título del PR y que la
+integración Jira↔GitHub linkee sin intervención manual.
+
+> **Corrige a ADR-0006**, que dice que el deploy sale de `master`. La rama de producción
+> se llama `main`. Hay que actualizar ese ADR.
+
+## Commits
+
+Prefijo de tipo, dos puntos, y mensaje en minúscula. **En español.**
+
+```
+feat: crear rol en un servidor
+fix: permissions entraba nullable sin default
+chore: agregar requirements-dev con ruff y pytest-cov
+docs: actualizar README con setup de dev
+```
+
+No se exige referencia a Jira en cada commit individual: va en el título del PR.
+
+**No se aceptan mensajes genéricos.** Nada de `fix`, `wip`, `changes`, `update`, `asd`.
+La consigna lo marca explícitamente.
+
+Como los merges son merge commit y no squash, cada commit sobrevive en el historial de
+`develop`: el mensaje individual es lo que se ve al hacer `git log`, no solo el título del
+PR.
 
 ## Pull requests
 
-- **Una historia = un PR.** Si el PR toca tres historias, está mal armado.
-- Un **encargado** (autor) y un **reviewer** que aprueba. El reviewer no puede ser el autor.
-- **Squash merge** hacia `dev`: un commit por historia deja un historial legible y hace fácil revertir.
-- El PR referencia el ticket de Jira en el título: `TP-95: FastAPI base de identity`.
+- **Una historia = un PR.** Si el PR toca tres historias, está mal armado. Un reformateo
+  masivo va en su propio PR, sin nada más adentro.
+- **Título:** `[SCRUM-XXX] Descripción del cambio`
+- Un **autor** (assignee) y un **reviewer** que aprueba. El reviewer no puede ser el autor.
+- **1 approval** para mergear.
+- **Merge commit** hacia `develop`. Es el único método habilitado.
+- **Los checks del CI tienen que pasar.** El merge queda bloqueado si no.
+- Avisar por el canal del grupo cuando se pide un review: las notificaciones de GitHub se
+  pierden entre el resto.
 
-## Convención de commits (propuesta)
-
-```
-<tipo>(<scope>): <descripción en imperativo>
-
-TP-95
-```
-
-Tipos: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`.
-
-> Propuesta a validar con el equipo. Si nadie la banca, alcanza con que el mensaje diga qué se hizo y referencie el ticket.
+La descripción sigue la plantilla (`.github/pull_request_template.md`): qué hace, qué
+historia cubre, cómo se prueba, y **deuda conocida** si el PR deja algo a medias a
+propósito. Ese último punto no es opcional: un `continue-on-error` o un `TODO` sin
+explicación y sin ticket es peor que el problema que evita.
 
 ## Antes de pedir review
 
 - [ ] CI en verde (la consigna marca CI roto como red line)
 - [ ] Sin `.env`, credenciales ni claves en el diff
 - [ ] Tests de lo nuevo, con la cobertura del repo por encima del 70%
-- [ ] Si cambia un contrato entre servicios, el evento está en [`arquitectura/eventos.md`](../arquitectura/eventos.md)
+- [ ] Si cambia un contrato entre servicios, el evento está en
+      [`arquitectura/eventos.md`](../arquitectura/eventos.md)
+- [ ] Si toca el esquema, la migración encadena con la última que entró a `develop`
 - [ ] Si es una decisión de diseño, hay un ADR (ver [CONTRIBUTING](../CONTRIBUTING.md))
+
+## Branch protection
+
+Configurada como ruleset en cada repo, sobre `develop` y `main`:
+
+- Require a pull request before merging — **1 approval**
+- Allowed merge methods: solo **Merge commit**
+- Require status checks to pass: `lint`, `test`, `build`, `gitleaks`
+- Require branches to be up to date before merging
+- Block force pushes
+
+En el PR los checks se muestran como `CI / lint`, `CI / test`, `CI / build`,
+`CI / gitleaks`; en el buscador de rulesets aparecen sin el prefijo. Solo figuran en la
+lista después de la primera corrida del workflow en ese repo, así que el orden es:
+pushear el `ci.yml`, esperar que corra, configurar la protección.
+
+## Migraciones de base de datos
+
+En los servicios con Alembic, **dos PRs en paralelo no pueden generar migraciones sobre la
+misma revisión padre**: quedan dos heads y Alembic falla al aplicarlas.
+
+Quien mergea segundo rebasea y reencadena su `down_revision` apuntando a la migración que
+ya entró. Conviene avisar en el canal cuando se genera una migración.
+
+## Reformateos masivos
+
+Cuando un PR reformatea archivos enteros, el SHA del commit de formateo va a
+`.git-blame-ignore-revs` en la raíz del repo, así `git blame` no atribuye todo el archivo a
+ese commit.
+
+Cada uno tiene que activarlo en su clon una vez — no se hereda del repo:
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
+## Secretos
+
+El detalle está en ADR-0007. Lo operativo:
+
+- `.env` en `.gitignore`, junto con `*.pem`, `*.key`, `*credentials*.json`,
+  `coverage.xml`, `.coverage`, `.ruff_cache/`.
+- `.env.example` versionado en cada servicio, con los nombres de las variables y valores
+  dummy.
+- `gitleaks` corre en el CI de todos los repos escaneando el **historial completo**, no
+  solo el último commit.
+- **Ningún secreto real en Discord, en Jira ni en los repos de documentación.**
+- **Si un secreto llega al historial, se rota.** Borrar el commit no alcanza: hay que
+  asumir que quedó expuesto y cambiar la credencial, porque el commit ya se clonó en las
+  máquinas de los demás.
+
+Secretos commiteados son red line de la consigna: bloquean la evaluación del proyecto.
+
+## Referencias
+
+- [`convenciones.md`](convenciones.md) — naming de servicios, HTTP, bases de datos, fechas
+- [`definition-of-done.md`](definition-of-done.md)
+- [Contrato de repositorio para el CI](../ci/contrato-ci.md) — el layout que cada repo debe
+  cumplir para que el pipeline compartido funcione
+- ADR-0006 — proveedor cloud y CI/CD (pendiente: dice `master`, va `main`)
+- ADR-0007 — gestión de secretos
