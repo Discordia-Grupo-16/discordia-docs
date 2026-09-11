@@ -1,0 +1,203 @@
+openapi: 3.0.0
+info:
+  title: Discordia Chat Service API
+  version: 1.0.0
+  description: >
+    Servicio `chat-y-real-time`. Cubre, para el camino crítico del Sprint 1
+    (CP1): Enviar mensaje en un canal (#15). Historial y reconexión (#16) se
+    modela parcialmente vía GET /channels/{channelId}/messages (carga de
+    historial) — la paginación completa y la garantía de no pérdida de
+    mensajes en reconexión (CA2 de esa historia) se profundizan en CP2, ya
+    que esa historia no está en el Objetivo Principal del Sprint 1.
+    Adaptado del contrato de referencia entregado por la cátedra: IDs pasan
+    de integer a UUID para ser consistentes con `identity` y `community`, y
+    channelId/authorId ahora referencian directamente los recursos de esos
+    servicios (Channel.id de `community`, User.id de `identity`).
+
+servers:
+  - url: http://localhost:8003
+    description: Entorno local (detrás del API Gateway en producción)
+
+paths:
+  /channels/{channelId}/messages:
+    get:
+      summary: Retrieve the message history of a channel
+      description: >
+        Returns the channel's messages ordered by createdAt ascending, then
+        id ascending. CA1 (carga de historial) de "Historial y reconexión":
+        los más recientes primero, con paginación mediante `before`.
+      operationId: getChannelMessages
+      parameters:
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - in: path
+          name: channelId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Debe referenciar un Channel existente en `community`.
+        - in: query
+          name: before
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Id de mensaje para paginar hacia atrás (mensajes anteriores a este).
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+      responses:
+        '200':
+          description: A list of messages
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+        '403':
+          description: El usuario no tiene acceso a este canal (autorización validada contra roles/permisos en `community`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Channel not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /channels/{channelId}/ws:
+    get:
+      summary: WebSocket upgrade endpoint for a channel
+      description: >
+        Not a regular REST endpoint. This fixed path performs an HTTP Upgrade
+        to a WebSocket connection scoped to the given channel. Clients send
+        SendOrEditMessageEvent payloads to create messages (edición de
+        mensaje es optativa y no está en el Sprint 1), and receive every
+        Message broadcast to this channel. El handshake de upgrade requiere
+        X-User-Id/X-User-Role, propagados por el API Gateway a partir de un
+        JWT ya validado, y se autoriza contra los permisos del usuario en
+        ese canal (RNF — Autorización para unirse a un canal). La
+        propagación entre instancias del servicio se hace vía Pub/Sub (RNF
+        — Mensajería en tiempo real).
+      operationId: channelWebSocket
+      parameters:
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - in: path
+          name: channelId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '101':
+          description: Switching Protocols. The connection was upgraded to WebSocket successfully.
+        '403':
+          description: El usuario no tiene permiso de conexión sobre este canal.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Channel not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  parameters:
+    XUserId:
+      in: header
+      name: X-User-Id
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: >
+        Id del usuario autenticado, propagado por el API Gateway a partir
+        del JWT ya validado (ver JwtClaims en identity.yaml). Usado tanto
+        para autorizar el historial de mensajes como para el handshake de
+        upgrade a WebSocket; el gateway valida el JWT antes de completar el
+        upgrade (RNF — Autorización para unirse a un canal).
+    XUserRole:
+      in: header
+      name: X-User-Role
+      required: true
+      schema:
+        type: string
+        enum: [user, staff]
+      description: Rol global del usuario autenticado, propagado por el API Gateway.
+
+  schemas:
+    Message:
+      type: object
+      required: [id, channelId, authorId, content, createdAt, editedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        channelId:
+          type: string
+          format: uuid
+        authorId:
+          type: string
+          format: uuid
+          description: Referencia a User.id en `identity`. El cliente resuelve nombre/avatar vía identity.
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        createdAt:
+          type: string
+          format: date-time
+        editedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    SendOrEditMessageEvent:
+      type: object
+      description: >
+        Payload sent by a client over the WebSocket to create a message. En
+        el Sprint 1 solo se soporta creación (`id` ausente); edición se
+        agrega junto con la historia optativa correspondiente sin romper
+        este contrato.
+      required: [content]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Presente solo al editar un mensaje existente (fuera de alcance del Sprint 1).
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
+
+    ErrorResponse:
+      type: object
+      required: [type, title, status, detail, instance]
+      properties:
+        type:
+          type: string
+          enum: [about:blank]
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
