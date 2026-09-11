@@ -61,7 +61,12 @@ integración Jira↔GitHub linkee sin intervención manual.
 
 ## Commits
 
-Prefijo de tipo, dos puntos, y mensaje en minúscula. **En español.**
+Prefijo de tipo, dos puntos, y mensaje en minúscula.
+
+**Idioma según el repo:** inglés en los repos de código, español en el repo docs. Es lo que se
+está usando de hecho en cada uno.
+
+Repos de código:
 
 ```
 feat: crear rol en un servidor
