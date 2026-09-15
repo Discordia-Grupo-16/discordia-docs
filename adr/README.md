@@ -15,6 +15,7 @@ Si agregás un ADR, agregá el renglón acá en el mismo PR.
 | [ADR-0005](0005-tecnologia-del-canal-de-voz.md) | Tecnología del canal de voz | Propuesto | — |
 | [ADR-0006](0006-proveedor-cloud-y-cicd.md) | Proveedor cloud y pipeline de CI/CD | Propuesto | — |
 | [ADR-0007](0007-gestion-de-secretos.md) | Gestión de secretos y configuración | Propuesto | — |
+| [ADR-0008](0008-proxy-websocket-como-excepcion-al-adr-0002.md) | Proxy WebSocket del gateway hacia `chat` como excepción al ADR-0002 | Propuesto | — |
 
 ## De servicio (referencia)
 
