@@ -1,0 +1,36 @@
+services:
+  api-gateway:
+    environment:
+      # Apuntamos la URL de identity al servicio real
+      UPSTREAM_IDENTITY_URL: http://identity-service:8080
+      UPSTREAM_CHAT_URL: http://chat-service:8080
+      UPSTREAM_COMMUNITY_URL: http://community-service:8000
+    networks:
+      - red-local
+
+  identity-service:
+    ports: !reset []
+    networks:
+      - red-local
+      - default
+
+  chat-service:
+    ports: !reset []
+    networks:
+      - red-local
+      - default
+
+  community-service:
+    ports: !reset []
+    networks:
+      - red-local
+      - default
+
+  identity-db:
+    ports: !reset [ ]
+
+  community-db:
+    ports: !reset [ ]
+
+  chat-mongo:
+    ports: !reset [ ]
