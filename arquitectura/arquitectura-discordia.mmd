@@ -1,9 +1,10 @@
 %% Discordia - Arquitectura de alto nivel
 %% Fuente unica del diagrama. Editar aca, no en una imagen exportada.
-%% Ver: adr/0001, adr/0002, adr/0003, adr/0004, adr/0008, adr/0009
+%% Ver: adr/0001, adr/0002, adr/0003, adr/0008, adr/0009
 %% Dos caminos, y no hay que mezclarlos:
 %%   cliente -> gateway -> servicio : HTTP sincronico, el gateway hace de proxy (ADR-0009)
 %%   servicio -> bus -> consumidores: eventos, asincronico, unica via entre servicios
+%% No hay flechas servicio -> servicio: el ADR-0004 rechazo las llamadas sincronicas internas.
 %% El gateway no publica al bus: el evento lo publica el servicio dueno del recurso.
 
 flowchart TB
@@ -52,10 +53,6 @@ flowchart TB
     bus --> metrics
 
     notif --> fcm
-
-    identity <-. "sincronico<br/>ADR-0004" .-> community
-    identity <-. "sincronico<br/>ADR-0004" .-> mod
-    monetization -. "sincronico<br/>ADR-0004" .-> identity
 
     classDef pendiente stroke-dasharray: 5 5
     class bus pendiente

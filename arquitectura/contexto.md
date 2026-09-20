@@ -10,7 +10,7 @@ Plataforma de comunidades con servidores, canales de texto y de voz, mensajería
 
 - Los tres clientes hablan **solo** con `api-gateway`.
 - El gateway **publica al bus Pub/Sub**; los microservicios consumen. El gateway no llama directo a los servicios ([ADR-0002](../adr/0002-api-gateway-y-publicacion-al-bus.md)).
-- **Asíncrono por defecto.** Toda excepción sincrónica está enumerada y justificada en [ADR-0004](../adr/0004-comunicaciones-sincronicas.md).
+- **Entre servicios backend, asíncrono siempre.** No hay llamadas sincrónicas servicio→servicio: el [ADR-0004](../adr/0004-comunicaciones-sincronicas.md) las evaluó y las rechazó. Un servicio que necesita un dato ajeno lo recibe por evento y lo proyecta localmente.
 - **Una base de datos por servicio.** Ningún servicio lee la base de otro; si necesita un dato ajeno, llega por evento.
 - `metrics` se suscribe a los eventos de **todos** los servicios.
 
