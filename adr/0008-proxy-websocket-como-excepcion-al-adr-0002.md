@@ -3,7 +3,7 @@
 - **Estado:** Propuesto
 - **Fecha:** 2026-09-16
 - **Decisores:** Felipe Abad Mustillo (propone, dueño de `chat` en el sprint 1) — pendiente de aval del equipo en la weekly
-- **Servicios afectados:** `api-gateway`, `chat`
+- **Servicios afectados:** `api-gateway`, `chat-and-real-time`
 
 > Este número (`0008`) lo toma este ADR al abrir el PR, por orden de
 > llegada — no está reservado para el ADR del mecanismo de respuesta del
@@ -205,7 +205,7 @@ cambios.
 - [ADR-0004](0004-comunicaciones-sincronicas.md) (sin relación directa —
   gobierna llamadas sincrónicas *entre servicios backend*, no transporte
   cliente↔plataforma)
-- `discordia-chat/openapi.yaml` y
-  `discordia-chat/arquitectura/protocolo-tiempo-real.md` (SCRUM-131,
+- `chat-and-real-time/openapi.yaml` y
+  `chat-and-real-time/arquitectura/protocolo-tiempo-real.md` (SCRUM-131,
   contrato y semántica de los frames)
 - Jira: SCRUM-41 (Enviar mensaje en un canal), SCRUM-132 (esta decisión)
