@@ -2,9 +2,9 @@
 
 Todo lo que viaja por el bus se declara acá. **Un evento que no está en esta tabla no existe**: si un servicio publica algo que nadie documentó, el consumidor se entera cuando se rompe.
 
-> Estado: envelope, naming, versionado, reglas de idempotencia/orden/reintentos y topología de colas ya definidos (SCRUM-122 a SCRUM-125, INF-02). Catálogo del camino crítico del CP1 completo; el payload de los eventos de `community` está propuesto por `chat` y pendiente de confirmación del dueño de `community`. Cada épica nueva suma sus eventos a la tabla en el mismo PR que los implementa.
+> Estado: envelope, naming, versionado, reglas de idempotencia/orden/reintentos y topología de colas ya definidos (SCRUM-122 a SCRUM-125, INF-02). Catálogo del camino crítico del CP1 completo; los payloads que figuran como *a definir* o como propuesta de un consumidor los cierra el dueño del servicio que publica, en la historia que implementa el evento. Cada épica nueva suma sus eventos a la tabla en el mismo PR que los implementa.
 
-**Alcance de este documento: eventos, no comandos.** Un evento describe algo que ya ocurrió y nadie lo puede rechazar (`chat.message.sent`). Un comando es una orden que puede fallar (por ejemplo, lo que el gateway publica para `POST /servers` según [ADR-0002](../adr/0002-api-gateway-y-publicacion-al-bus.md)). El envelope de comandos y su mecanismo de respuesta se definen en el ADR del mecanismo de respuesta del gateway (candidato a ADR-0008), no acá.
+**Por el bus viajan sólo eventos.** Un evento describe algo que ya ocurrió y nadie lo puede rechazar (`chat.message.sent`). **No hay comandos en el bus:** desde el [ADR-0009](../adr/0009-gateway-proxy-sincronico-para-requests-del-cliente.md) el gateway resuelve cada request del cliente como proxy sincrónico al servicio, y el evento lo publica el servicio recién después de confirmar la escritura. Nunca viaja por el broker una orden que todavía puede fallar, así que no hace falta un envelope de comandos ni un mecanismo de respuesta: el de abajo es el único envelope que existe.
 
 ## Convención de nombres
 
@@ -18,6 +18,7 @@ Reglas:
 
 - El verbo va **en pasado**: el evento describe algo que ya ocurrió, no una orden.
 - El servicio que publica es el dueño del nombre. Nadie publica en el namespace de otro.
+- **El payload lo define el dueño del servicio que publica**, en la historia que implementa el evento, y en ese mismo PR lo deja escrito en la tabla de abajo. Un consumidor puede proponer los campos que necesita, pero la propuesta no es el contrato hasta que el dueño la confirma acá. Un payload que quedó en "a definir" es deuda del dueño de ese servicio, no de quien lo consume.
 - Un evento nuevo se agrega; **un evento existente no cambia de forma**. Si el payload tiene que cambiar de manera incompatible, se publica `v2` en paralelo y se deprecia el anterior.
 
 ## Envelope común
@@ -39,7 +40,7 @@ Todos los eventos comparten la misma estructura externa; lo específico va en `d
 
 - `eventId`: identifica esta instancia del evento. Es la clave para deduplicar en el consumidor (ver "Idempotencia" más abajo).
 - `correlationId` viaja desde el gateway y se propaga a todos los eventos derivados: es lo único que permite seguir un flujo completo entre 8 servicios cuando algo falla.
-- `causationId`: el `eventId` (o id del comando) que causó directamente este evento. Distinto de `correlationId`, que identifica el flujo completo; `causationId` reconstruye la cadena causal paso a paso dentro de ese flujo.
+- `causationId`: el `eventId` del evento que causó directamente este evento. Si el evento nace de una request del cliente no hay evento causante, así que va vacío y el flujo se sigue por `correlationId`. Distinto de `correlationId`, que identifica el flujo completo; `causationId` reconstruye la cadena causal paso a paso dentro de ese flujo.
 - `eventVersion` permite convivir dos versiones durante una migración.
 - `occurredAt` en UTC ISO-8601 con `Z`, igual que el resto de las fechas del sistema ([convenciones](../procesos/convenciones.md)).
 
@@ -102,7 +103,7 @@ Las reglas de ack, prefetch, backoff y dead-letter (sección anterior) aplican i
 | `community.member.left` | `community` | `chat` (proyección de autorización), `metrics` (fan-out) | `{ serverId, userId }` ¹ | SCRUM-137 |
 | `chat.message.sent` | `chat` | `chat` (fan-out multiinstancia, cola por instancia), `metrics` (fan-out) | `{ messageId, channelId, serverId, authorId, content, createdAt, clientMessageId }` | SCRUM-41 |
 
-¹ Payload de los cinco eventos de `community` propuesto por `chat`, que es quien primero los necesita (proyección local de autorización). Falta la confirmación del dueño de `community`. Para el CP1 solo son obligatorios `member.joined` y `channel.created` (la demo depende de ellos); `member.left`, `channel.updated` y `channel.deleted` se consumen recién en CP2, pero se catalogan ahora para que el nombre y el payload no cambien cuando se implementen.
+¹ Payload de los cinco eventos de `community` propuesto por `chat`, que es quien primero los necesita (proyección local de autorización). Es una propuesta, no el contrato: el dueño de `community` la confirma o la reemplaza en la historia que implementa cada evento y actualiza esta tabla en ese PR. Para el CP1 solo son obligatorios `member.joined` y `channel.created` (la demo depende de ellos); `member.left`, `channel.updated` y `channel.deleted` se consumen recién en CP2, pero se catalogan ahora para que el nombre y el payload no cambien cuando se implementen.
 
 ## Nota sobre los dos lenguajes
 
