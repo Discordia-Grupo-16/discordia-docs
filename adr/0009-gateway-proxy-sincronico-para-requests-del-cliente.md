@@ -20,7 +20,7 @@ El ADR-0002 enumeró tres candidatos (correlation ID + espera, `202` + polling, 
 
 Restricciones que aplican:
 
-- La consigna exige **API Gateway como punto único de entrada** y **comunicación asíncrona por defecto entre servicios**, con toda comunicación sincrónica **justificada en un ADR**. Este es ese ADR para el tráfico cliente↔plataforma; el tráfico servicio↔servicio lo sigue gobernando el [ADR-0004](0004-comunicaciones-sincronicas.md).
+- La consigna exige **API Gateway como punto único de entrada** y **comunicación asíncrona por defecto entre servicios**, con toda comunicación sincrónica **justificada en un ADR**. Este es ese ADR para el tráfico cliente↔plataforma; el tráfico servicio↔servicio lo gobierna el [ADR-0004](0004-comunicaciones-sincronicas.md), que rechazó toda llamada sincrónica interna.
 - La decisión define la forma de **todos** los endpoints, así que bloquea al front y a los tres servicios del camino crítico.
 - El [ADR-0003](0003-tecnologia-del-bus-pubsub.md) eligió RabbitMQ, que **no tiene replay**: un mensaje publicado y consumido no se puede volver a leer, y un mensaje que nunca se publicó no se puede recuperar. Eso pesa sobre quién publica y cuándo.
 
@@ -77,7 +77,7 @@ cliente ──HTTP──► api-gateway ──HTTP──► *
 
 - El gateway **no publica al bus** y **no tiene lógica de negocio**: valida el JWT, aplica rate limiting, propaga identidad y correlación por headers, reenvía y devuelve. Deja de ser productor del bus.
 - El gateway sigue siendo el **único punto de entrada**: los tres artefactos cliente no conocen ni alcanzan a ningún servicio directamente. Esa parte del ADR-0002 no cambia.
-- La comunicación **entre servicios backend** sigue siendo **100% asincrónica por el bus**. Este ADR no habilita ni una sola llamada servicio→servicio; eso lo sigue gobernando el [ADR-0004](0004-comunicaciones-sincronicas.md), que sigue abierto y sin relación con esta decisión.
+- La comunicación **entre servicios backend** sigue siendo **100% asincrónica por el bus**. Este ADR no habilita ni una sola llamada servicio→servicio; eso lo gobierna el [ADR-0004](0004-comunicaciones-sincronicas.md), que las rechazó todas.
 
 ### 2. El evento al bus lo publica el servicio, no el gateway
 
@@ -145,7 +145,7 @@ La consigna pide justificar cada comunicación sincrónica. Las 19 operaciones H
 |---|---|
 | [ADR-0002](0002-api-gateway-y-publicacion-al-bus.md) | **Reemplazado parcialmente.** Sigue vigente: gateway como punto único de entrada, concentrador de auth, rate limiting y ruteo, y servicios sin puertos al exterior. Queda sin efecto: "el gateway publica al bus Pub/Sub… El gateway no llama directo a los servicios". |
 | [ADR-0003](0003-tecnologia-del-bus-pubsub.md) | Sin cambios. El bus sigue siendo RabbitMQ con las dos topologías. Cambia quién publica (el servicio, nunca el gateway) y qué viaja: **sólo eventos**. |
-| [ADR-0004](0004-comunicaciones-sincronicas.md) | Sin cambios y sigue abierto. Gobierna las llamadas sincrónicas **entre servicios backend**, que este ADR no habilita ni amplía. |
+| [ADR-0004](0004-comunicaciones-sincronicas.md) | **Rechazado** a partir de esta decisión. Gobernaba las llamadas sincrónicas **entre servicios backend**, que este ADR no habilita ni amplía: al resolverse la respuesta al cliente en el gateway, ningún servicio necesita llamar a otro y las tres comunicaciones que enumeraba se descartaron. |
 | [ADR-0008](0008-proxy-websocket-como-excepcion-al-adr-0002.md) | Coherente y reforzado. Deja de ser "una excepción al ADR-0002" para ser el caso de transporte de larga duración de la misma regla general: el gateway termina y reenvía el transporte del cliente hacia el servicio dueño. La restricción de su "Alcance de la excepción" que decía que no habilita proxy HTTP de otros endpoints queda subsumida por este ADR. |
 
 **Desaparece la noción de comando en el bus.** El ADR-0002 la había introducido y [`arquitectura/eventos.md`](../arquitectura/eventos.md) dejó pendiente definir su envelope y su mecanismo de respuesta. Con esta decisión, por el bus viajan **sólo eventos**: hechos ya ocurridos, que nadie puede rechazar. No hace falta envelope de comandos, ni tópico de respuestas, ni correlación de comandos con resultados.

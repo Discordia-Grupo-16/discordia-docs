@@ -9,7 +9,7 @@ Plataforma de comunidades con servidores, canales de texto y de voz, mensajería
 ## Forma general
 
 - Los tres clientes hablan **solo** con `api-gateway`.
-- El gateway **publica al bus Pub/Sub**; los microservicios consumen. El gateway no llama directo a los servicios ([ADR-0002](../adr/0002-api-gateway-y-publicacion-al-bus.md)).
+- El gateway resuelve cada request del cliente como **proxy sincrónico** al servicio dueño del recurso y le devuelve la respuesta tal cual ([ADR-0009](../adr/0009-gateway-proxy-sincronico-para-requests-del-cliente.md)). **El gateway no publica al bus:** el evento lo publica el servicio, después de confirmar la escritura en su base.
 - **Entre servicios backend, asíncrono siempre.** No hay llamadas sincrónicas servicio→servicio: el [ADR-0004](../adr/0004-comunicaciones-sincronicas.md) las evaluó y las rechazó. Un servicio que necesita un dato ajeno lo recibe por evento y lo proyecta localmente.
 - **Una base de datos por servicio.** Ningún servicio lee la base de otro; si necesita un dato ajeno, llega por evento.
 - `metrics` se suscribe a los eventos de **todos** los servicios.
@@ -23,7 +23,7 @@ Cualquier propuesta se chequea contra esta lista antes de discutirla:
 - [x] 4 artefactos: backend + web + backoffice + mobile
 - [x] ≥2 lenguajes de backend (Python, Go)
 - [x] ≥1 base SQL (PostgreSQL) y ≥1 NoSQL (MongoDB)
-- [x] Comunicación asíncrona por defecto; lo sincrónico va con ADR
+- [x] Comunicación asíncrona por defecto; lo sincrónico va con ADR → entre servicios no hay nada sincrónico ([ADR-0004](../adr/0004-comunicaciones-sincronicas.md)); el tráfico cliente↔gateway↔servicio sí lo es, justificado en el [ADR-0009](../adr/0009-gateway-proxy-sincronico-para-requests-del-cliente.md)
 - [x] Pub/Sub obligatorio para mensajería
 - [ ] Deploy en la nube con CI/CD → [ADR-0006](../adr/0006-proveedor-cloud-y-cicd.md)
 - [ ] Cobertura de tests ≥70% → sin estrategia definida
