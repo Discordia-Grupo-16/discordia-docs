@@ -85,6 +85,7 @@ Sobre ese exchange hay dos formas de declarar una cola, y **no son intercambiabl
 
 - **Cola compartida** para consumir los eventos de `community` que alimentan su proyección de autorización: el Mongo de `chat` es uno solo, no tiene sentido que tres instancias apliquen el mismo `member.joined` tres veces.
 - **Cola por instancia** para `chat.message.sent`: cada instancia tiene un conjunto distinto de clientes WebSocket conectados, así que cada una necesita enterarse de **todos** los mensajes para reenviárselos a los suyos.
+- **Cola por instancia** para `chat.membership.changed`, el relevo interno de membresías: la instancia que aplica un `member.joined` o `.left` a la proyección no sabe cuál tiene al usuario conectado, así que avisa a todas y cada una actualiza las suscripciones de sus propias conexiones.
 
 **Riesgo a tener presente:** si `chat.message.sent` se declara por error como cola compartida, el mensaje le llega a una sola instancia — es decir, a una fracción de los usuarios conectados. No tira error, solo un cliente que nunca recibe nada, y es muy difícil de diagnosticar sin saber que la topología estaba mal desde el arranque. Por eso queda escrito acá y no solo en la cabeza de quien lo implementa.
 
@@ -97,13 +98,16 @@ Las reglas de ack, prefetch, backoff y dead-letter (sección anterior) aplican i
 | `identity.user.registered` | `identity` | `metrics` (fan-out) | *A definir por `identity`* | Historia de registro — dueño `identity` |
 | `community.server.created` | `community` | `metrics` (fan-out) | *A definir por `community`* | Historia de creación de servidor — dueño `community` |
 | `community.channel.created` | `community` | `chat` (proyección de autorización), `metrics` (fan-out) | `{ channelId, serverId, name, type }` ¹ | SCRUM-137 |
-| `community.channel.updated` | `community` | `chat` (proyección de autorización), `metrics` (fan-out) | `{ channelId, name?, type? }` ¹ | SCRUM-137 |
+| `community.channel.updated` | `community` | `metrics` (fan-out) | `{ channelId, name?, type? }` ¹ | SCRUM-137 |
 | `community.channel.deleted` | `community` | `chat` (proyección de autorización), `metrics` (fan-out) | `{ channelId }` ¹ | SCRUM-137 |
 | `community.member.joined` | `community` | `chat` (proyección de autorización), `metrics` (fan-out) | `{ serverId, userId }` ¹ | SCRUM-137 |
 | `community.member.left` | `community` | `chat` (proyección de autorización), `metrics` (fan-out) | `{ serverId, userId }` ¹ | SCRUM-137 |
 | `chat.message.sent` | `chat` | `chat` (fan-out multiinstancia, cola por instancia), `metrics` (fan-out) | `{ messageId, channelId, serverId, authorId, content, createdAt, clientMessageId }` | SCRUM-41 |
+| `chat.membership.changed` | `chat` | `chat` (relevo entre instancias, cola por instancia) | `{ serverId, userId }` ² | SCRUM-146 |
 
-¹ Payload de los cinco eventos de `community` propuesto por `chat`, que es quien primero los necesita (proyección local de autorización). Es una propuesta, no el contrato: el dueño de `community` la confirma o la reemplaza en la historia que implementa cada evento y actualiza esta tabla en ese PR. Para el CP1 solo son obligatorios `member.joined` y `channel.created` (la demo depende de ellos); `member.left`, `channel.updated` y `channel.deleted` se consumen recién en CP2, pero se catalogan ahora para que el nombre y el payload no cambien cuando se implementen.
+¹ Payload de los cinco eventos de `community` propuesto por `chat`, que es quien primero los necesita (proyección local de autorización). Es una propuesta, no el contrato: el dueño de `community` la confirma o la reemplaza en la historia que implementa cada evento y actualiza esta tabla en ese PR. Para el CP1 solo son obligatorios `member.joined` y `channel.created` (la demo depende de ellos); `chat` ya consume también `member.left` y `channel.deleted`, y se catalogan todos ahora para que el nombre y el payload no cambien cuando se implementen. `channel.updated` no lo consume `chat`: el nombre y el tipo de un canal no cambian quién puede escribir en él (la regla del CP1 es que ser miembro del servidor habilita todos sus canales), así que su cola ni siquiera se bindea a ese evento.
+
+² Relevo interno de `chat`, no un hecho de negocio nuevo: lo publica la instancia que aplicó un `community.member.joined` o `.left` a su proyección, con el `eventId` de ese evento como `causationId`, para que la instancia que tiene al usuario conectado lo suscriba o lo desuscriba del servidor. No dice si el usuario entró o salió: quien lo recibe relee la proyección, así que no depende del orden de llegada ni de los duplicados. `metrics` lo recibe por su binding `#`, pero no tiene nada que contar: el hecho de negocio es el evento de `community` que lo causó.
 
 ## Nota sobre los dos lenguajes
 
