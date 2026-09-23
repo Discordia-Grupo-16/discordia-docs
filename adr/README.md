@@ -17,6 +17,7 @@ Si agregás un ADR, agregá el renglón acá en el mismo PR.
 | [ADR-0007](0007-gestion-de-secretos.md) | Gestión de secretos y configuración | Propuesto | — |
 | [ADR-0008](0008-proxy-websocket-como-excepcion-al-adr-0002.md) | Proxy WebSocket del gateway hacia `chat` como excepción al ADR-0002 | Propuesto | — |
 | [ADR-0009](0009-gateway-proxy-sincronico-para-requests-del-cliente.md) | El gateway resuelve las requests del cliente como proxy sincrónico | Aceptado | 2026-09-19 |
+| [ADR-0010](0010-revocacion-de-tokens-con-redis.md) | Revocación de tokens JWT con Redis | Propuesto | — |
 
 ## De servicio (referencia)
 
