@@ -97,10 +97,6 @@ Si el gateway no puede conectarse a Redis, deja pasar la request (**fail open**)
 - Si Redis se cae, hay una ventana donde tokens revocados podrían ser aceptados (fail open). Es un tradeoff aceptable frente a bloquear a todos los usuarios.
 - El gateway adquiere una dependencia de red nueva (conexión a Redis), aunque con política de degradación graceful.
 
-**Qué queda pendiente por esta decisión**
-
-- Agregar Redis al pipeline de CI y a la configuración de despliegue en cloud.
-
 ### Variables de entorno de conexión a Redis
 
 Ambos servicios (`identity` y `api-gateway`) usan las mismas variables. Los valores por defecto apuntan al contenedor de Redis del compose de `identity`.
