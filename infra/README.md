@@ -17,18 +17,18 @@ Este `docker-compose.yaml` levanta **todos los servicios a la vez**, para ensaya
 
 ```
 discordia/
-├── discordia-docs/
+├── docs/                      (o discordia-docs/)
 │   └── infra/
 │       ├── docker-compose.yaml
 │       ├── docker-compose.override.yaml
 │       └── README.md          <- este archivo
 ├── api-gateway/
-├── Identity/
+├── identity/
 ├── community/
-└── discordia-chat/
+└── chat-and-real-time/
 ```
 
-> Los nombres de carpeta son los que surgen de un `git clone` directo de cada repo (`Identity`, `community`, `discordia-chat`, `api-gateway`), **no** los nombres canónicos `discordia-<servicio>` de [`procesos/convenciones.md`](../procesos/convenciones.md). Es una decisión tomada, no un pendiente: se prioriza que `git clone <url>` funcione sin renombrar nada a mano. Si el nombre de un repo cambia, actualizar el `include:` en el mismo PR que lo renombra.
+> Los nombres de carpeta son los que surgen de un `git clone` directo de cada repo (`identity`, `community`, `chat-and-real-time`, `api-gateway`), siguiendo [`procesos/git-workflow.md`](../procesos/git-workflow.md#repos). Si el nombre de un repo cambia, actualizar el `include:` en el mismo PR que lo renombra.
 
 Si tu clone usa otros nombres de carpeta, o los repos no están todos al mismo nivel, editá los paths del `include:` en tu copia local — no lo subas modificado salvo que sea para reflejar un renombre real del repo.
 
@@ -75,30 +75,32 @@ No reemplaza al override por defecto: lo extiende. Se levanta con los tres archi
 docker compose -f docker-compose.yaml -f docker-compose.override.yaml -f docker-compose.demo.yaml up --build
 ```
 
-Con esto, además de `api-gateway`, quedan expuestos al host:
+Con esto, además de `api-gateway` (puerto `8000`), quedan expuestos al host (coincidiendo con los contratos de `arquitectura/contratos/`):
 
 | Servicio | Puerto en host | Para qué |
 |---|---|---|
-| `identity-service` | `8081` | Pegarle directo con curl/Postman |
-| `community-service` | `8001` | Pegarle directo con curl/Postman |
-| `chat-service` | `8082` | Pegarle directo con curl/Postman |
+| `identity-service` | `8001` | Pegarle directo con curl/Postman |
+| `community-service` | `8002` | Pegarle directo con curl/Postman |
+| `chat-service` | `8003` | Pegarle directo con curl/Postman |
 | `identity-db` | `5433` | Cliente de Postgres (psql, DBeaver, etc.) |
 | `community-db` | `5434` | Cliente de Postgres |
 | `chat-mongo` | `27018` | Cliente de Mongo (Compass, mongosh) |
+| `identity-redis` | `6380` | Cliente de Redis (redis-cli, etc.) |
 
-Los puertos externos son intencionalmente distintos a los estándar (`5432`, `27017`, etc.) para no chocar con una instancia de Postgres/Mongo que ya tengas corriendo en tu máquina para otra cosa.
+Los puertos externos de DB son intencionalmente distintos a los estándar (`5432`, `27017`, `6379`, etc.) para no chocar con una instancia de Postgres/Mongo/Redis que ya tengas corriendo en tu máquina para otra cosa.
 
-Esta variante **no se usa para la demo frente al corrector** — ahí corre solo `docker-compose.yaml` + `docker-compose.override.yaml`, con únicamente el gateway expuesto, que es lo que refleja la arquitectura real. `docker-compose.demo.yaml` es una herramienta de trabajo del equipo, pese al nombre; si genera confusión lo renombramos a `docker-compose.debug.yaml` en un próximo PR.
+Esta variante **no se usa para la demo frente al corrector** — ahí corre solo `docker-compose.yaml` + `docker-compose.override.yaml`, con únicamente el gateway expuesto (`8000`), que es lo que refleja la arquitectura real. `docker-compose.demo.yaml` es una herramienta de trabajo del equipo, pese al nombre; si genera confusión lo renombramos a `docker-compose.debug.yaml` en un próximo PR.
 
 ## Servicios incluidos hoy
 
 | Servicio (nombre en este compose) | Nombre canónico ([`servicios.md`](../arquitectura/servicios.md)) | Puerto publicado al host |
 |---|---|---|
-| `api-gateway` | `api-gateway` | Sí (ver su propio compose para el puerto) |
+| `api-gateway` | `api-gateway` | Sí (`8000`) |
 | `identity-service` | `identity` | No |
 | `chat-service` | `chat-and-real-time` | No |
 | `community-service` | `community` | No |
 | `identity-db` | — | No |
+| `identity-redis` | — | No |
 | `community-db` | — | No |
 | `chat-mongo` | — | No |
 
@@ -119,9 +121,9 @@ A medida que un servicio nuevo entra en alcance de un checkpoint, agregar su lí
 
 ## Decisiones ya tomadas (no reabrir sin avisar al equipo)
 
-- **Nombres de carpeta = nombre de `git clone`.** `Identity`, `community`, `discordia-chat`, `api-gateway` quedan tal cual surgen de clonar cada repo, aunque no seas el nombre canónico `discordia-<servicio>`. Si el repo se renombra, el `include:` se actualiza en el mismo PR.
+- **Nombres de carpeta = nombre de `git clone`.** `identity`, `community`, `chat-and-real-time`, `api-gateway` quedan tal cual surgen de clonar cada repo (siguiendo [`procesos/git-workflow.md`](../procesos/git-workflow.md#repos)). Si el repo se renombra, el `include:` se actualiza en el mismo PR.
 - **Nombres de servicio con sufijo `-service`.** `identity-service`, `community-service`, `chat-service` son los nombres de host definitivos dentro de Docker, aunque no coincidan textualmente con `arquitectura/servicios.md`. Todo servicio nuevo que se agregue a este compose mantiene el mismo sufijo.
-- **Puerto `8080` de `identity-service` es correcto**, no es un desalineamiento con Uvicorn — el servicio expone ese puerto puerta adentro del contenedor a propósito.
+- **Puertos alineados con los contratos OpenAPI de `dev`.** Gateway en `8000`, `identity-service` en `8001`, `community-service` en `8002`, `chat-service` en `8003`.
 - **RabbitMQ vive en el compose de `api-gateway`**, no en éste. Lo agregó el equipo de gateway y se levanta automáticamente al incluir `./api-gateway/compose.yaml`. Si RabbitMQ necesita configuración adicional para algún consumidor nuevo, esa configuración va en el override de quien lo consuma, no acá.
 
 ## Pendientes antes de darlo por cerrado

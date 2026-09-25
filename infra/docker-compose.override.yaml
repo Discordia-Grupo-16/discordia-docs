@@ -1,12 +1,15 @@
 services:
   api-gateway:
+    ports: !override
+      - "8000:8080"
     environment:
-      # Apuntamos la URL de identity al servicio real
-      UPSTREAM_IDENTITY_URL: http://identity-service:8080
+      # Apuntamos la URL de cada servicio al contenedor real
+      UPSTREAM_IDENTITY_URL: http://identity-service:8001
       UPSTREAM_CHAT_URL: http://chat-service:8080
       UPSTREAM_COMMUNITY_URL: http://community-service:8000
     networks:
       - red-local
+      - default
 
   identity-service:
     ports: !reset []
@@ -27,10 +30,18 @@ services:
       - default
 
   identity-db:
-    ports: !reset [ ]
+    ports: !reset []
+
+  identity-redis:
+    ports: !reset []
 
   community-db:
-    ports: !reset [ ]
+    ports: !reset []
 
   chat-mongo:
-    ports: !reset [ ]
+    ports: !reset []
+
+  rabbitmq:
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
