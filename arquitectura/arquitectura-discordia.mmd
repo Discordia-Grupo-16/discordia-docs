@@ -1,6 +1,11 @@
 %% Discordia - Arquitectura de alto nivel
 %% Fuente unica del diagrama. Editar aca, no en una imagen exportada.
-%% Ver: adr/0001, adr/0002, adr/0003, adr/0004
+%% Ver: adr/0001, adr/0002, adr/0003, adr/0008, adr/0009
+%% Dos caminos, y no hay que mezclarlos:
+%%   cliente -> gateway -> servicio : HTTP sincronico, el gateway hace de proxy (ADR-0009)
+%%   servicio -> bus -> consumidores: eventos, asincronico, unica via entre servicios
+%% No hay flechas servicio -> servicio: el ADR-0004 rechazo las llamadas sincronicas internas.
+%% El gateway no publica al bus: el evento lo publica el servicio dueno del recurso.
 
 flowchart TB
     subgraph clientes["Artefactos cliente"]
@@ -9,9 +14,7 @@ flowchart TB
         mob["mobile<br/>React Native"]
     end
 
-    gw["api-gateway<br/>Go<br/>auth JWT / rate limit / ruteo"]
-
-    bus{{"Bus Pub/Sub<br/>tecnologia sin definir - ADR-0003"}}
+    gw["api-gateway<br/>Go<br/>auth JWT / rate limit / ruteo / proxy"]
 
     subgraph python["Python + FastAPI + PostgreSQL"]
         identity["identity<br/>usuarios / auth / perfil"]
@@ -26,27 +29,30 @@ flowchart TB
         metrics["metrics<br/>PostgreSQL"]
     end
 
+    bus{{"Bus Pub/Sub<br/>RabbitMQ - ADR-0003 propuesto"}}
+
     fcm[("Firebase<br/>Cloud Messaging")]
 
     web --> gw
     bo --> gw
     mob --> gw
 
-    gw <--> bus
+    gw -- "HTTP sincronico<br/>ADR-0009" --> identity
+    gw -- "HTTP sincronico<br/>ADR-0009" --> community
+    gw -- "HTTP sincronico<br/>ADR-0009" --> chat
+    gw == "WebSocket<br/>ADR-0008" ==> chat
+    gw -. "sin contrato todavia" .-> mod
+    gw -. "sin contrato todavia" .-> monetization
 
-    bus <--> identity
-    bus <--> community
-    bus <--> mod
-    bus <--> monetization
-    bus <--> chat
+    identity <--> bus
+    community <--> bus
+    mod <--> bus
+    monetization <--> bus
+    chat <--> bus
     bus --> notif
     bus --> metrics
 
     notif --> fcm
-
-    identity <-. "sincronico<br/>ADR-0004" .-> community
-    identity <-. "sincronico<br/>ADR-0004" .-> mod
-    monetization -. "sincronico<br/>ADR-0004" .-> identity
 
     classDef pendiente stroke-dasharray: 5 5
     class bus pendiente

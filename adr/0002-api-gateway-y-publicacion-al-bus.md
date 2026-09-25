@@ -1,9 +1,17 @@
 # ADR-0002: API Gateway como punto único de entrada que publica al bus
 
-- **Estado:** Aceptado
+- **Estado:** Reemplazado parcialmente por [ADR-0009](0009-gateway-proxy-sincronico-para-requests-del-cliente.md)
 - **Fecha:** 2026-09-04
 - **Decisores:** equipo completo (reunión de kickoff)
 - **Servicios afectados:** todos, `api-gateway` en particular
+
+> **Qué sigue vigente y qué no.** El [ADR-0009](0009-gateway-proxy-sincronico-para-requests-del-cliente.md) resolvió el problema abierto que este ADR dejó planteado, y al hacerlo dio vuelta una parte de su decisión.
+>
+> - **Sigue vigente:** el gateway es el punto único de entrada, los tres clientes hablan solo con él, concentra autenticación, rate limiting y ruteo, y los servicios no exponen puertos al exterior.
+> - **Queda sin efecto:** "El gateway publica al bus Pub/Sub… El gateway no llama directo a los servicios". Desde el ADR-0009 el gateway resuelve cada request del cliente como proxy sincrónico al servicio dueño del recurso, y el evento al bus lo publica el servicio.
+> - La comunicación **entre servicios backend** sigue siendo asincrónica por el bus, sin excepciones.
+>
+> El resto del documento se conserva sin editar: es el registro de por qué elegimos primero la otra opción.
 
 ## Contexto
 
@@ -50,9 +58,10 @@ Elegimos la **Opción B**.
 
 **Qué queda pendiente por esta decisión**
 
-- ADR sobre el mecanismo de respuesta del gateway (candidato a ADR-0008).
+- ~~ADR sobre el mecanismo de respuesta del gateway (candidato a ADR-0008).~~ Resuelto en [ADR-0009](0009-gateway-proxy-sincronico-para-requests-del-cliente.md); el número `0008` lo tomó otro ADR por orden de llegada.
 - La tecnología concreta del bus: [ADR-0003](0003-tecnologia-del-bus-pubsub.md).
 
 ## Referencias
 
 - [ADR-0003](0003-tecnologia-del-bus-pubsub.md), [ADR-0004](0004-comunicaciones-sincronicas.md)
+- [ADR-0009](0009-gateway-proxy-sincronico-para-requests-del-cliente.md) — reemplaza parcialmente a este

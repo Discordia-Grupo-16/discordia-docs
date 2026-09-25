@@ -58,7 +58,6 @@ discordia-docs/
 | ADR | Tema | Bloquea a |
 |---|---|---|
 | [ADR-0003](adr/0003-tecnologia-del-bus-pubsub.md) | Tecnología del bus Pub/Sub | Todo el backend — es el mecanismo de comunicación por defecto |
-| [ADR-0004](adr/0004-comunicaciones-sincronicas.md) | Comunicaciones sincrónicas permitidas | `identity`, `community`, `mod`, `monetization` |
 | [ADR-0005](adr/0005-tecnologia-del-canal-de-voz.md) | Canal de voz: servicio gestionado vs SFU propio | `chat-and-real-time` |
 | [ADR-0006](adr/0006-proveedor-cloud-y-cicd.md) | Proveedor cloud y pipeline de CI/CD | Requisito duro de la consigna |
 | [ADR-0007](adr/0007-gestion-de-secretos.md) | Gestión de secretos | **Red line**: secretos en el repo bloquean la evaluación |
