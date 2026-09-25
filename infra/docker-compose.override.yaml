@@ -1,8 +1,11 @@
 services:
   api-gateway:
     ports: !override
-      - "8000:8080"
+      - "8080:8080"
     environment:
+      # Mismo secreto con el que identity firma los tokens (JWT_SECRET_KEY en
+      # identity/.env.example); si no coinciden, el gateway responde 401 a todo.
+      JWT_SECRET: super-secret-key-change-in-production-1234567890
       # Apuntamos la URL de cada servicio al contenedor real
       UPSTREAM_IDENTITY_URL: http://identity-service:8001
       UPSTREAM_CHAT_URL: http://chat-service:8080

@@ -75,7 +75,7 @@ No reemplaza al override por defecto: lo extiende. Se levanta con los tres archi
 docker compose -f docker-compose.yaml -f docker-compose.override.yaml -f docker-compose.demo.yaml up --build
 ```
 
-Con esto, además de `api-gateway` (puerto `8000`), quedan expuestos al host (coincidiendo con los contratos de `arquitectura/contratos/`):
+Con esto, además de `api-gateway` (puerto `8080`), quedan expuestos al host (coincidiendo con los contratos de `arquitectura/contratos/`):
 
 | Servicio | Puerto en host | Para qué |
 |---|---|---|
@@ -89,13 +89,13 @@ Con esto, además de `api-gateway` (puerto `8000`), quedan expuestos al host (co
 
 Los puertos externos de DB son intencionalmente distintos a los estándar (`5432`, `27017`, `6379`, etc.) para no chocar con una instancia de Postgres/Mongo/Redis que ya tengas corriendo en tu máquina para otra cosa.
 
-Esta variante **no se usa para la demo frente al corrector** — ahí corre solo `docker-compose.yaml` + `docker-compose.override.yaml`, con únicamente el gateway expuesto (`8000`), que es lo que refleja la arquitectura real. `docker-compose.demo.yaml` es una herramienta de trabajo del equipo, pese al nombre; si genera confusión lo renombramos a `docker-compose.debug.yaml` en un próximo PR.
+Esta variante **no se usa para la demo frente al corrector** — ahí corre solo `docker-compose.yaml` + `docker-compose.override.yaml`, con únicamente el gateway expuesto (`8080`), que es lo que refleja la arquitectura real. `docker-compose.demo.yaml` es una herramienta de trabajo del equipo, pese al nombre; si genera confusión lo renombramos a `docker-compose.debug.yaml` en un próximo PR.
 
 ## Servicios incluidos hoy
 
 | Servicio (nombre en este compose) | Nombre canónico ([`servicios.md`](../arquitectura/servicios.md)) | Puerto publicado al host |
 |---|---|---|
-| `api-gateway` | `api-gateway` | Sí (`8000`) |
+| `api-gateway` | `api-gateway` | Sí (`8080`) |
 | `identity-service` | `identity` | No |
 | `chat-service` | `chat-and-real-time` | No |
 | `community-service` | `community` | No |
@@ -123,7 +123,7 @@ A medida que un servicio nuevo entra en alcance de un checkpoint, agregar su lí
 
 - **Nombres de carpeta = nombre de `git clone`.** `identity`, `community`, `chat-and-real-time`, `api-gateway` quedan tal cual surgen de clonar cada repo (siguiendo [`procesos/git-workflow.md`](../procesos/git-workflow.md#repos)). Si el repo se renombra, el `include:` se actualiza en el mismo PR.
 - **Nombres de servicio con sufijo `-service`.** `identity-service`, `community-service`, `chat-service` son los nombres de host definitivos dentro de Docker, aunque no coincidan textualmente con `arquitectura/servicios.md`. Todo servicio nuevo que se agregue a este compose mantiene el mismo sufijo.
-- **Puertos alineados con los contratos OpenAPI de `dev`.** Gateway en `8000`, `identity-service` en `8001`, `community-service` en `8002`, `chat-service` en `8003`.
+- **Puertos alineados con los contratos OpenAPI de `dev`.** Gateway en `8080` (el mismo puerto interno del contenedor), `identity-service` en `8001`, `community-service` en `8002`, `chat-service` en `8003`.
 - **RabbitMQ vive en el compose de `api-gateway`**, no en éste. Lo agregó el equipo de gateway y se levanta automáticamente al incluir `./api-gateway/compose.yaml`. Si RabbitMQ necesita configuración adicional para algún consumidor nuevo, esa configuración va en el override de quien lo consuma, no acá.
 
 ## Pendientes antes de darlo por cerrado

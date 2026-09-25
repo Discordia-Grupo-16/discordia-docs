@@ -9,7 +9,7 @@
 # un cliente de DB mientras se debuggea un flujo puntual.
 #
 # Los puertos externos coinciden con los contratos OpenAPI (arquitectura/contratos/):
-#   - api-gateway: 8000 (ya expuesto por el override)
+#   - api-gateway: 8080 (ya expuesto por el override)
 #   - identity: 8001
 #   - community: 8002
 #   - chat: 8003
